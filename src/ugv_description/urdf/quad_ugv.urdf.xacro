@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="quad_ugv">
+
+  <!-- ROS REP-103: x forward, y left, z up -->
+  <xacro:property name="pi" value="3.141592653589793"/>
+
+  <!-- Chassis -->
+  <xacro:property name="base_length" value="0.55"/>
+  <xacro:property name="base_width"  value="0.38"/>
+  <xacro:property name="base_height" value="0.14"/>
+
+  <!-- Wheel + geometry -->
+  <xacro:property name="wheel_radius" value="0.10"/>
+  <xacro:property name="wheel_width"  value="0.05"/>
+  <xacro:property name="track"        value="0.34"/>  <!-- left-right wheel center distance -->
+  <xacro:property name="wheelbase"    value="0.42"/>  <!-- front-rear wheel center distance -->
+
+  <material name="Grey"><color rgba="0.65 0.65 0.65 1"/></material>
+  <material name="Black"><color rgba="0.10 0.10 0.10 1"/></material>
+
+  <!-- base_link -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0"/>
+      <mass value="18.0"/>
+      <inertia ixx="0.50" ixy="0" ixz="0" iyy="0.80" iyz="0" izz="1.00"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0"/>
+      <geometry><box size="${base_length} ${base_width} ${base_height}"/></geometry>
+      <material name="Grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${base_height/2.0}" rpy="0 0 0"/>
+      <geometry><box size="${base_length} ${base_width} ${base_height}"/></geometry>
+    </collision>
+  </link>
+
+  <!-- Wheel macro: IMPORTANT PART
+       Cylinder default axis is Z. Wheels should rotate about Y (axle along Y).
+       So we rotate cylinder by +90deg about X to align cylinder axis Z -> Y. -->
+  <xacro:macro name="wheel" params="name x y">
+    <link name="${name}_link">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="1.2"/>
+        <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      </inertial>
+
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+        <material name="Black"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2.0} 0 0"/>
+        <geometry><cylinder radius="${wheel_radius}" length="${wheel_width}"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${name}_link"/>
+      <origin xyz="${x} ${y} ${wheel_radius}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+
+    <!-- Contact tuning to stop wobble/coin-flip -->
+    <gazebo reference="${name}_link">
+      <mu1>2.0</mu1>
+      <mu2>2.0</mu2>
+      <kp>2e6</kp>
+      <kd>5</kd>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- 4 wheels -->
+  <xacro:wheel name="front_left"  x="${ wheelbase/2.0}" y="${ track/2.0}"/>
+  <xacro:wheel name="front_right" x="${ wheelbase/2.0}" y="-${track/2.0}"/>
+  <xacro:wheel name="rear_left"   x="-${wheelbase/2.0}" y="${ track/2.0}"/>
+  <xacro:wheel name="rear_right"  x="-${wheelbase/2.0}" y="-${track/2.0}"/>
+
+  <!-- LiDAR -->
+  <link name="lidar_link">
+    <visual>
+      <geometry><cylinder radius="0.04" length="0.05"/></geometry>
+      <material name="Black"/>
+    </visual>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="0.18 0 0.22" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Skid-steer drive plugin (gz-sim) -->
+  <gazebo>
+    <plugin filename="libignition-gazebo-diff-drive-system.so" name="gz::sim::systems::SkidSteerDrive">
+      <left_front_joint>front_left_joint</left_front_joint>
+      <right_front_joint>front_right_joint</right_front_joint>
+      <left_rear_joint>rear_left_joint</left_rear_joint>
+      <right_rear_joint>rear_right_joint</right_rear_joint>
+
+      <wheel_separation>${track}</wheel_separation>
+      <wheel_base>${wheelbase}</wheel_base>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+      <odom_publish_frequency>30</odom_publish_frequency>
+    </plugin>
+  </gazebo>
+
+  <!-- LiDAR sensor -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_ray">
+      <update_rate>10</update_rate>
+      <ray>
+        <scan>
+          <horizontal>
+            <samples>720</samples>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>12.0</max>
+        </range>
+      </ray>
+      <topic>/scan</topic>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+</robot>
